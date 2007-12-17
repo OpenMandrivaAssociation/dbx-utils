@@ -12,7 +12,6 @@ Source0:	libdbx_%{version}.tar.bz2
 Patch0:		libdbx_1.0.3-shared.diff
 Patch1:		libdbx_1.0.3-Mail-Transport-Dbx-0.07.diff
 BuildRequires:	libtool
-BuildRoot: 	%{_tmppath}/%{name}-%{version}-buildroot
 
 %description
 Extract emails from MS Outlook Express 5.0 directory, and DBX files into mbox
