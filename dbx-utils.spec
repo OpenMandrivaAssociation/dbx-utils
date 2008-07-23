@@ -4,7 +4,7 @@
 Summary:	Extracts emails from MS Outlook Express 5.0
 Name:   	dbx-utils
 Version: 	1.0.3
-Release: 	%mkrel 3
+Release: 	%mkrel 5
 License:	GPL
 Group:		Networking/Mail
 URL:		http://sourceforge.net/projects/ol2mbox
