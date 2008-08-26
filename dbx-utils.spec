@@ -1,11 +1,12 @@
 %define	major 0
 %define libname	%mklibname dbx %{major}
+%define develname	%mklibname dbx -d
 
 Summary:	Extracts emails from MS Outlook Express 5.0
 Name:   	dbx-utils
 Version: 	1.0.3
-Release: 	%mkrel 5
-License:	GPL
+Release: 	%mkrel 6
+License:	GPLv2+
 Group:		Networking/Mail
 URL:		http://sourceforge.net/projects/ol2mbox
 Source0:	libdbx_%{version}.tar.bz2
@@ -28,13 +29,14 @@ format files.
 
 This package contains the shared libdbx library.
 
-%package -n	%{libname}-devel
+%package -n	%{develname}
 Summary:	Development files for the libdbx library
 Group:		Development/C
 Provides:	libdbx-devel = %{version}
 Requires:	%{libname} = %{version}
+Obsoletes:	%{libname}-devel
 
-%description -n	%{libname}-devel
+%description -n	%{develname}
 Extract emails from MS Outlook Express 5.0 directory, and DBX files into mbox
 format files.
 
@@ -76,9 +78,9 @@ This package contains the static libdbx library and header files.
 
 %files -n %{libname}
 %defattr(-,root,root)
-%{_libdir}/*.so.*
+%{_libdir}/*.so.%{major}*
 
-%files -n %{libname}-devel
+%files -n %{develname}
 %defattr(-,root,root)
 %{_includedir}/libdbx
 %{_libdir}/*.so
