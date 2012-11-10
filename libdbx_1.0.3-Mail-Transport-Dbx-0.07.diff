@@ -1,0 +1,1445 @@
+diff -Naur libdbx_1.0.3/common.h libdbx_1.0.3.oden/common.h
+--- libdbx_1.0.3/common.h	2002-10-05 15:07:36.000000000 +0200
++++ libdbx_1.0.3.oden/common.h	2005-06-23 20:51:48.000000000 +0200
+@@ -1,21 +1,29 @@
+-
+ #ifndef __COMMON_H
+ #define __COMMON_H
+ 
+-typedef unsigned int DWORD;
+-typedef unsigned short int WORD;
+-typedef unsigned char BYTE;
+-typedef unsigned int UINT32;
++/* perl5.5.3 already has WORD as a #define somewhere: get rid of it */
++#undef WORD
++
++#ifndef _WIN32
++    typedef unsigned int DWORD;
++    typedef unsigned short int WORD;
++    typedef unsigned char BYTE;
++    typedef unsigned int UINT32;
++#else
++# include <Windows.h>
++#endif
+ 
+ #pragma pack (1)
+ 
++#ifndef _WIN32
+ #ifndef FILETIME_DEFINED
+ #define FILETIME_DEFINED
+-/*Win32 Filetime struct - copied from WINE*/
++/* Win32 Filetime struct - copied from WINE */
+ typedef struct {
+ 	unsigned int dwLowDateTime;
+-  unsigned int dwHighDateTime;
++    unsigned int dwHighDateTime;
+ } FILETIME;
++#endif /* _WIN32 */
+ #endif
+ 
+ #endif
+diff -Naur libdbx_1.0.3/define.h libdbx_1.0.3.oden/define.h
+--- libdbx_1.0.3/define.h	2002-10-05 15:20:25.000000000 +0200
++++ libdbx_1.0.3.oden/define.h	2005-06-23 20:51:48.000000000 +0200
+@@ -15,97 +15,34 @@
+  *                                                                         *
+  ***************************************************************************/
+ 
+-//#define DEBUG_ALL
++/****************************************************************
++ * Heavily patched to make the macro definitions ANSI-C compliant 
++ * **************************************************************/
++
++/* #define DEBUG_ALL */
+ 
+ #ifndef DEFINEH_H
+ #define DEFINEH_H
+ 
+-//variable number of arguments to this macro. will expand them into 
+-// ## args, then exit with status of 1
+ #include <stdio.h>
+-#include <netinet/in.h>
+-#include <unistd.h>
+-#include <sys/types.h>
+-
+-#ifdef DEBUSAVE
+-#define MESSAGEINIT(filename) messagefp=fopen(filename, "w");
+-#define MESSAGESAVE(format, args...) messagefp!=NULL?fprintf(messagefp, format, ##args):0;
+-#define MESSAGESTOP() fclose(messagefp);
+-#define DEBUGINIT(filename) debugfp=fopen(filename, "w"); //open with truncate
+-#define DEBUGWRITE(format,args...) debugfp!=NULL?fprintf(debugfp, format, ##args):0;
+-#define DEBUGSTOP() fclose(debugfp);
+-#else
+-#define MESSAGEINIT(filename)
+-#define MESSAGESAVE(format, args...)
+-#define MESSAGESTOP()
+-#define DEBUGINIT(a...)
+-#define DEBUGWRITE(format,args...)
+-#define DEBUGSTOP()
+-#endif
+-
+-
+-#ifdef DEBUG_ALL
+-#define MESSAGEPRINT(format, args...) fprintf(stderr, format, ## args);
+-#else
+-#define MESSAGEPRINT(format,args...)
+-#endif
+-
+-#define LOGSTOP() {MESSAGESTOP();DEBUGSTOP();}
+-
+-#define DIE(format,args...) {\
+- MESSAGEPRINT(format, ##args);\
+- MESSAGESAVE(format, ##args);\
+- LOGSTOP();\
+- exit(1);\
+-}
+-#define WARN(format,args...) {MESSAGEPRINT(format, ##args); MESSAGESAVE(format, ##args);}
+-
+-#ifdef DEBUG_ALL
+-#define DEBUG_MODE_GEN
+-//#define DEBUG_MODE_INDEX
+-//#define DEBUG_MODE_EMAIL
+-#define DEBUGPRINT
+-#define DEBUG_MODE_WARN
+-//#define DEBUGSAVE
+-//extern FILE *debugfp;
+-#endif
+ 
+-//extern FILE *messagefp;
+-
+-#ifdef DEBUGPRINT
+-#define DEBUG_PRINT(format,args...) fprintf(stderr, format, ## args);
+-#else
+-#define DEBUG_PRINT(a...)
+-#endif
+-
+-#ifdef DEBUG_MODE_GEN
+-#define DEBUG(format,args...) {DEBUG_PRINT(format, ##args);DEBUGWRITE(format, ##args)}
+-#else
+-#define DEBUG(format,args...) {}
+-#endif
+-
+-#ifdef DEBUG_MODE_INDEX
+-#define DEBUG_INDEX(format,args...) DEBUG(format, ##args);
+-#else
+-#define DEBUG_INDEX(format,args...) {}
+-#endif
+-
+-#ifdef DEBUG_MODE_EMAIL
+-#define DEBUG_EMAIL(format,args...) DEBUG(format, ##args);
+-#else
+-#define DEBUG_EMAIL(format,args...) {}
++/* netinet/in.h makes FreeBSD croak: 
++ * fortunately it appears to be superfluous */
++/* #include <netinet/in.h> */
++
++/* Not necessarily existing on Win */
++#ifdef I_UNISTD
++# include <unistd.h>
+ #endif
+-
+-#ifdef DEBUG_MODE_WARN
+-#define DEBUG_WARN(format,args...) DEBUG(format, ##args);
+-#else
+-#define DEBUG_WARN(format,args...) {}
++#ifdef I_SYS_TYPES
++# include <sys/types.h>
+ #endif
+ 
+-#define RET_DERROR(res, ret_val, debug_msg, args...)\
+-	if (res) { DEBUG_WARN(debug_msg, ## args); dbx_errno = ret_val; return -1; }
+ #define RET_ERROR(res, ret_val)\
+-	if (res) {dbx_errno = ret_val; return -1;}	
++	if (res) { \
++        dbx_errno = ret_val; \
++        return -1; \
++    }	
+ 
+-#endif //DEFINEH_H
++#endif /* DEFINEH_H */
+ 
+diff -Naur libdbx_1.0.3/libdbx.c libdbx_1.0.3.oden/libdbx.c
+--- libdbx_1.0.3/libdbx.c	2002-10-05 15:07:36.000000000 +0200
++++ libdbx_1.0.3.oden/libdbx.c	2005-06-23 20:56:35.000000000 +0200
+@@ -15,206 +15,255 @@
+  *                                                                         *
+  ***************************************************************************/
+ 
+-//#include <stdio.h>
++/*********************************************************/
++/* Heavily patched to make it run on big-endian machines */
++/*********************************************************/
++
++/* #include <stdio.h> */
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ #include "libdbx.h"
+ #include "define.h"
+ 
++# if defined DBX_BIG_ENDIAN
++
++/* '((x & 0xff000000) >> 24) & 0x000000ff' is a fix for Solaris' ucbcc */
++
++#  define LE32_CPU(x) \
++  x = (((((x) & 0xff000000) >> 24) & 0x000000ff) | \
++        (((x) & 0x00ff0000) >> 8 ) | \
++        (((x) & 0x0000ff00) << 8 ) | \
++        (((x) & 0x000000ff) << 24));
++#  define LE16_CPU(x) \
++  x = ((((x) & 0xff00) >> 8) | \
++       (((x) & 0x00ff) << 8));
++# elif defined DBX_LITTLE_ENDIAN
++#  define LE32_CPU(x) {}
++#  define LE16_CPU(x) {}
++# else
++#  error "Byte order not supported by this library"
++# endif
+ 
+ int dbx_errno = 0;
+-//could be 0xE4 or 0x30
++/* could be 0xE4 or 0x30 */
+ #define INDEX_POINTER 0xE4
+ #define ITEM_COUNT 0xC4
+ 
+-/*Internal Prototypes*/
++/* Internal Prototypes */
+ 
+-int _dbx_get (FILE *fp, void *buf, unsigned int size);
+-int _dbx_getAtPos(FILE *fp, int pos, void* buf, unsigned int size);
+-int _dbx_getitem (FILE *fp, int pos, void** item, int type, int flags);
+-int _dbx_getindex(FILE* fd, int pos, DBX *dbx);
+-int _dbx_getIndexes (FILE* fd, DBX *dbx);
+-int _dbx_getstruct(FILE *fp, int pos, DBXFOLDER* folder);
+-int _dbx_get_from_buf(char* buffer, int pos, void** dest, int type, int max);
+-int _dbx_getBody(FILE *fp, char** x, int ptr);
++int _dbx_get            (FILE *fp, void *buf, unsigned int size);
++int _dbx_getAtPos       (FILE *fp, int pos, void* buf, unsigned int size);
++int _dbx_getitem        (FILE *fp, int pos, void** item, int type, int flags);
++int _dbx_getindex       (FILE* fd, int pos, DBX *dbx);
++int _dbx_getIndexes     (FILE* fd, DBX *dbx);
++int _dbx_getstruct      (FILE *fp, int pos, DBXFOLDER* folder);
++int _dbx_get_from_buf   (char* buffer, int pos, void** dest, int type, int max);
++int _dbx_getBody        (FILE *fp, char** x, int ptr);
+ 
+ char * dbx_errmsgs[] = {
+-	"", //DBX_NOERROR
+-	"DBX File operation failed. Open or close", //DBX_BADFILE
+-	"Read of \"Item Count\" from DBX file failed", //DBX_ITEMCOUNT
+-	"Read of \"Index Pointer\" from DBX file failed", //DBX_INDEX_READ
+-	"Number of indexes read from dbx file is less than expected", //DBX_INDEX_UNDERREAD
+-	"Number of indexes read from dbx file is greater than expected", //DBX_INDEX_OVERREAD
+-	"Request was made for index reference greater than exists (subscript out of range)", //DBX_INDEXCOUNT
+-	"Reading of data from dbx file failed", //DBX_DATA_READ
+-	"Item is a news item not an email" //DBX_NEWS_ITEM
++    /* DBX_NOERROR */
++	"", 
++    /* DBX_BADFILE */
++	"DBX File operation failed. Open or close",  
++    /* DBX_ITEMCOUNT */
++	"Read of \"Item Count\" from DBX file failed",
++    /* DBX_INDEX_READ */
++	"Read of \"Index Pointer\" from DBX file failed", 
++    /* DBX_INDEX_UNDERREAD */
++	"Number of indexes read from dbx file is less than expected",
++    /* DBX_INDEX_OVERREAD */
++	"Number of indexes read from dbx file is greater than expected",
++    /* DBX_INDEXCOUNT */
++	"Request was made for index reference greater than exists (subscript out of range)",
++    /* DBX_DATA_READ */
++	"Reading of data from dbx file failed",
++    /* DBX_NEWS_ITEM */
++	"Item is a news item not an email"
+ };
+ 
+ /* dbx_open - Opens a dbx file and returns a DBX struct to the caller
+ 	@fname - Filename of dbx file to open*/
+ 
+-DBX *dbx_open(const char * fname) {
+-  FILE *fp;
++DBX *dbx_open(const char * fname) 
++{
++    FILE *fp;
+   
+-  DEBUG("[%d] Attempting to open file %s\n", __LINE__,fname);
++    if ( !(fp = fopen(fname, "rb")) ) {
++        dbx_errno = DBX_BADFILE;
++        return NULL;
++    }
+ 
+-  if ((fp = fopen(fname, "rb")) ==NULL) {
+-    DEBUG_WARN("[%d] Open of file %s failed\n", __LINE__, fname);
+-    dbx_errno = DBX_BADFILE;
+-    return NULL;
+-  }
+-
+-  return dbx_open_stream(fp);
++    return dbx_open_stream(fp);
+ }
+ 
+ DBX *dbx_open_stream(FILE *fp) {
+-  DBX *dbx = (DBX*) malloc (sizeof(DBX));
+-  int signature[4];
++    DBX *dbx = (DBX*) malloc (sizeof(DBX));
++    int signature[4];
+   
+-  dbx->fd = fp;
+-
+-  /* SIGNATURE */
+-  _dbx_getAtPos(dbx->fd,0x0,&signature,16);
+-  if ((signature[0]==0xFE12ADCF) && (signature[1]==0x6F74FDC5) &&
+-      (signature[2]==0x11D1E366) && (signature[3]==0xC0004E9A)) {
+-    /* OE 5 & OE 5 BETA SIGNATURE */
+-    dbx->type=DBX_TYPE_EMAIL;
+-  } else
+-    if ((signature[0]==0x36464D4A) && (signature[1]==0x00010003)) /* OE4 SIGNATURE */ {
+-      /*It is an OE4 dbx file*/	
+-      WARN("libdbx [Line %d]: File is an OE4 file format. This is unsupported.\n", __LINE__);
+-      dbx_errno = DBX_BADFILE;
+-      return NULL;
+-    } else
+-      if ((signature[0]==0xFE12ADCF) && (signature[1]==0x6F74FDC6) && /*Difference is C6 instead of C5*/
+-	  (signature[2]==0x11D1E366) && (signature[3]==0xC0004E9A)) {
+-	/*It is a Folders.dbx type file*/
+-	dbx->type=DBX_TYPE_FOLDER;
+-      } else {
+-	WARN("libdbx [Line %d]: The signature for file isn't known\n", __LINE__);
+-	dbx_errno = DBX_BADFILE;
+-	return NULL;
+-      }
++    dbx->fd = fp;
++    
++    /* SIGNATURE */
++    _dbx_getAtPos(dbx->fd, 0x0, &signature, 16);
++    
++    LE32_CPU(signature[0]);
++    LE32_CPU(signature[1]);
++    LE32_CPU(signature[2]);
++    LE32_CPU(signature[3]);
++
++    if ( signature[0] == 0xFE12ADCF && signature[1] == 0x6F74FDC5 &&
++         signature[2] == 0x11D1E366 && signature[3] == 0xC0004E9A ) {
++        
++        /* OE 5 & OE 5 BETA SIGNATURE */
++        dbx->type = DBX_TYPE_EMAIL;
++        
++    } else if ( signature[0] == 0x36464D4A && signature[1] == 0x00010003 ) {
++        
++        /*It is an OE4 dbx file*/	
++        dbx_errno = DBX_BADFILE;
++        return NULL;
++        
++    } else if ( signature[0] == 0xFE12ADCF && signature[1] == 0x6F74FDC6 && 
++                /*Difference is C6 instead of C5*/
++	            signature[2] == 0x11D1E366 && signature[3] == 0xC0004E9A ) {
++        
++        /*It is a Folders.dbx type file*/
++	    dbx->type = DBX_TYPE_FOLDER;
++        
++    } else {
++	    dbx_errno = DBX_BADFILE;
++	    return NULL;
++    }
+   
+-  if (_dbx_getIndexes(dbx->fd, dbx)) {
+-    /*dbx_errno is already set by getIndexes*/
+-    return NULL;
+-  }
++    if (_dbx_getIndexes(dbx->fd, dbx)) {
++        /* dbx_errno is already set by getIndexes */
++        return NULL;
++    }
+   
+-  dbx_errno = DBX_NOERROR;
+-  return dbx;
++    dbx_errno = DBX_NOERROR;
++    return dbx;
+ } 
+ 
+  
+ /* dbx_close - Closes a dbx file and deletes the internal struct
+ 	@dbx - DBX struct associated with dbx */
+ 
+-int dbx_close(DBX *dbx) {
+-	if (dbx == NULL || dbx->fd == NULL) {
+-		DEBUG_WARN("[%d] File isn't open when close requested\n", __LINE__);
+-		dbx_errno = DBX_BADFILE;
+-		return -1;
+-	}
+-
+-	fclose(dbx->fd);
+-	if (dbx->indexes != NULL) {
+-		free(dbx->indexes);
+-	}
+-	free(dbx);
+-
+-	dbx_errno = DBX_NOERROR;
+-	return 0;
++int dbx_close(DBX *dbx) 
++{
++    if (dbx == NULL || dbx->fd == NULL) {
++        dbx_errno = DBX_BADFILE;
++        return -1;
++    }
++
++    fclose(dbx->fd);
++    if (dbx->indexes) {
++        free(dbx->indexes);
++    }
++    free(dbx);
++
++    dbx_errno = DBX_NOERROR;
++    return 0;
++}
++
++int dbx_free(DBX *dbx, void *item) 
++{
++    return dbx_free_item(item);
++}
++
++int dbx_free_item(void *item) 
++{
++    DBXNON      *it = item;
++    DBXEMAIL    *email;
++    DBXFOLDER   *fol;
++
++    if (!item)
++        return 1;
++
++    if (it->type == DBX_TYPE_EMAIL) {
++        email = (DBXEMAIL*)item;    
++        if (email->email)
++            free(email->email);
++        if (email->subject)
++            free(email->subject);
++        if (email->psubject)
++    	    free(email->psubject);
++        if (email->messageid)
++            free(email->messageid);
++        if (email->parent_message_ids)
++            free(email->parent_message_ids);
++        if (email->sender_name)
++            free(email->sender_name);
++        if (email->sender_address)
++            free(email->sender_address);
++        if (email->recip_name)
++            free(email->recip_name);
++        if (email->recip_address)
++            free(email->recip_address);
++        if (email->oe_account_name)
++            free(email->oe_account_name);
++        if (email->oe_account_num)
++            free(email->oe_account_num);
++        if (email->fetched_server)
++            free(email->fetched_server);
++        free(email);
++    } else if (it->type == DBX_TYPE_FOLDER) {
++        fol = (DBXFOLDER*)item;
++        if (fol->name)
++            free(fol->name);
++        if (fol->fname)
++            free(fol->fname);
++        free(fol);
++    } else {
++  	    printf("Aaarghhh. Cannot free an unknown type!\n");
++    }
++    return 0;
+ }
+ 
+-int dbx_free(DBX *dbx, void *item) {
+-	return dbx_free_item(item);
+-}
+-
+-int dbx_free_item(void *item) {
+-	DBXNON *it = item;
+-  DBXEMAIL* email;
+-  DBXFOLDER* fol;
+-
+-  if (item == NULL)
+-    return 1;
+-
+-  if (it->type == DBX_TYPE_EMAIL) {
+-	  email = (DBXEMAIL*)item;
+-    if (email->email)
+-      free(email->email);
+-    if (email->subject)
+-      free(email->subject);
+-    if (email->psubject)
+-    	free(email->psubject);
+-    if (email->messageid)
+-      free(email->messageid);
+-    if (email->parent_message_ids)
+-      free(email->parent_message_ids);
+-    if (email->sender_name)
+-      free(email->sender_name);
+-    if (email->sender_address)
+-      free(email->sender_address);
+-    if (email->recip_name)
+-      free(email->recip_name);
+-    if (email->recip_address)
+-      free(email->recip_address);
+-    if (email->oe_account_name)
+-    	free(email->oe_account_name);
+-    if (email->oe_account_num)
+-    	free(email->oe_account_num);
+-    if (email->fetched_server)
+-    	free(email->fetched_server);
+-    free(email);
+-  } else if (it->type == DBX_TYPE_FOLDER) {
+-    fol = (DBXFOLDER*)item;
+-    if (fol->name)
+-      free(fol->name);
+-    if (fol->fname)
+-      free(fol->fname);
+-    free(fol);
+-  } else {
+-  	printf("Aaarghhh. Cannot free an unknown type!\n");
+-  }
+-  return 0;
+-}	
+ /* dbx_get - Gets an item from a dbx file
+ 	@dbx - dbx file to get item from
+ 	@index - item 0..itemcount to fetch
+ 	@flags - which parts to get */
+ 
+-void * dbx_get(DBX *dbx, int index, int flags) {
+-	int size;
+-	void * ret = NULL;
+-	
+-	if (dbx == NULL || dbx->fd == NULL) {
+-		DEBUG_WARN("[%d] File isn't open when a get requested\n", __LINE__);
+-		dbx_errno = DBX_BADFILE;
+-		return NULL;
+-	}
+-
+-	if (index >= dbx->indexCount || index < 0) {
+-		DEBUG_WARN("[%d] Request for item greater than the highest or less than zero\n", __LINE__);
+-		dbx_errno = DBX_INDEXCOUNT;
+-		return NULL;
+-	}
+-
+-	if (dbx->type == DBX_TYPE_EMAIL || dbx->type == DBX_TYPE_FOLDER) {
+-		size = _dbx_getitem(dbx->fd, dbx->indexes[index], &ret, dbx->type, flags);
+-		((DBXEMAIL*)ret)->num = index;
+-	} else {
+-		DEBUG_WARN("[%d] Request on a folder that has an unknown type\n", __LINE__);
+-		dbx_errno = DBX_BADFILE;
+-		return NULL;
+-	}
++void * dbx_get(DBX *dbx, int index, int flags) 
++{
++    int size;
++    void * ret = NULL;
++	
++    if (!dbx || !dbx->fd) {
++        dbx_errno = DBX_BADFILE;
++        return NULL;
++    }
++
++    if (index >= dbx->indexCount || index < 0) {
++        dbx_errno = DBX_INDEXCOUNT;
++        return NULL;
++    }
++
++    if (dbx->type == DBX_TYPE_EMAIL || dbx->type == DBX_TYPE_FOLDER) {
++        size = _dbx_getitem(dbx->fd, dbx->indexes[index], &ret, 
++                            dbx->type, flags);
++        ((DBXEMAIL*)ret)->num = index;
++    } else {
++        dbx_errno = DBX_BADFILE;
++        return NULL;
++    }
+ 		
+-	dbx_errno = DBX_NOERROR;
+-	return ret;
++    dbx_errno = DBX_NOERROR;
++    if (dbx->type == DBX_TYPE_EMAIL) {
++        /* we explicitely need to swap the filetime */
++        LE32_CPU(((DBXEMAIL*)ret)->date.dwLowDateTime);
++        LE32_CPU(((DBXEMAIL*)ret)->date.dwHighDateTime);
++        /* we weren't allowed to swap 'flag' because it
++         * is treated rather like a char */
++        LE32_CPU(((DBXEMAIL*)ret)->flag);
++    }
++    return ret;
+ }
+ 
+ /* dbx_perror - Print the error message to stderr
+ 	@str - prepend this message */
+-int dbx_perror(const char *str) {
++int dbx_perror(const char *str) 
++{
+ 	fprintf(stderr, "%s: %s\n", str, dbx_errmsgs[dbx_errno]);
+ 	return 0;
+ }
+@@ -224,37 +273,37 @@
+ 	@start - file offset from email pointer
+ 	@ptr - location to store data */
+ int dbx_get_body(DBX* dbx, int start, char** ptr) {
+-	if (dbx == NULL || dbx->fd == NULL) {
+-		DEBUG_WARN("[%d] Request on invalid dbx handle. Either it is non-existant or closed\n", __LINE__);
+-		dbx_errno = DBX_BADFILE;
+-		return -1;
+-	}
+-	return _dbx_getBody(dbx->fd, ptr, start);
++    if (!dbx || !dbx->fd) {
++        dbx_errno = DBX_BADFILE;
++        return -1;
++    }
++    return _dbx_getBody(dbx->fd, ptr, start);
+ }
+ 
+ /* dbx_get_email_body - Load the body of an email and store it in the email
+ 	@dbx - handle for the dbx file
+-	@email - email to fillin
+-*/
+-int dbx_get_email_body(DBX *dbx, DBXEMAIL* email) {
+-	if (dbx == NULL || dbx->fd == NULL) {
+-		DEBUG_WARN("[%d] Request on invalid dbx handle. Either it is non-existant or closed\n", __LINE__);
+-		dbx_errno = DBX_BADFILE;
+-		return -1;
+-	}
+-	return _dbx_getBody(dbx->fd, &(email->email), email->data_offset);
+-}	
+-
+-/* dbx_free_email_body - Clear the body of an email. To be called after dbx_get_email_body
+-	@email - email to remove body from
+-*/
+-int dbx_free_email_body(DBXEMAIL* email) {
+-	free (email->email);
+-	email->email = NULL;
+-	return 0;
++	@email - email to fillin */
++int dbx_get_email_body(DBX *dbx, DBXEMAIL* email) 
++{
++    if (!dbx || !dbx->fd) {
++        dbx_errno = DBX_BADFILE;
++        return -1;
++    }
++    return _dbx_getBody(dbx->fd, &(email->email), email->data_offset);
++}
++
++/* dbx_free_email_body - Clear the body of an email. To be called after
++ * dbx_get_email_body
++	@email - email to remove body from */
++int dbx_free_email_body(DBXEMAIL* email) 
++{
++    free (email->email);
++    email->email = NULL;
++    return 0;
+ }
+ 
+-const char* dbx_strerror(int err) {
++const char* dbx_strerror(int err) 
++{
+ 	return dbx_errmsgs[err];
+ }
+ 
+@@ -313,67 +362,65 @@
+ };
+ 
+ /* Email types - values thereof
+-	 0x01 - buffer pointer to Flag (char?)
+-   0x02 - 
+-   0x04 - buffer pointer to file offset of email data
+-   0x05 - buffer pointer to asciiz string containing the subject of email
+-   0x06 -
+-   0x07 - buffer pointer to asciiz message id of email
+-   0x08 - buffer pointer to asciiz another string containing the subject of email
+-   0x09 -
+-   0x0B -
+-   0x0A - buffer pointer to asciiz message ids of parent emails
+-   0x0C - buffer pointer to asciiz name of server where email was fetched from
+-   0x0D - buffer pointer to asciiz Name of sender
+-   0x0E - buffer pointer to asciiz Email address of sender
+-   0x11 -
+-   0x12 - 
+-   0x13 - buffer pointer to asciiz Name of recipient
+-   0x14 - buffer pointer to asciiz Email address of recipient
+-   0x1A - buffer pointer to asciiz name of email account used to fetch email
+-   0x1B - buffer pointer to asciiz number of email account (e.g. "00000001")
+-   0x1C - 
+-   0x80 -
+-   0x81 - email's flag (char?)
+-   0x84 - file offset to email data
+-   0x90 -
+-   0x91 -
++    0x01 - buffer pointer to Flag (char?)
++    0x02 - 
++    0x04 - buffer pointer to file offset of email data
++    0x05 - buffer pointer to asciiz string containing the subject of email
++    0x06 -
++    0x07 - buffer pointer to asciiz message id of email
++    0x08 - buffer pointer to asciiz another string containing the subject 
++           of email
++    0x09 -
++    0x0B -
++    0x0A - buffer pointer to asciiz message ids of parent emails
++    0x0C - buffer pointer to asciiz name of server where email was fetched from
++    0x0D - buffer pointer to asciiz Name of sender
++    0x0E - buffer pointer to asciiz Email address of sender
++    0x11 -
++    0x12 - 
++    0x13 - buffer pointer to asciiz Name of recipient
++    0x14 - buffer pointer to asciiz Email address of recipient
++    0x1A - buffer pointer to asciiz name of email account used to fetch email
++    0x1B - buffer pointer to asciiz number of email account (e.g. "00000001")
++    0x1C - 
++    0x80 -
++    0x81 - email's flag (char?)
++    0x84 - file offset to email data
++    0x90 -
++    0x91 -
+ */
+ 
+ /* Folder types - values thereof
+-   0x02 - Descriptive Name
+-   0x03 - Filename
+-   0x80 - Folder ID
+-   0x81 - ID of parent
++    0x02 - Descriptive Name
++    0x03 - Filename
++    0x80 - Folder ID
++    0x81 - ID of parent
+ */
+ 
+ struct _dbx_email_pointerstruct {
+   unsigned char type;
+-  int val; //this is supposed to be a 3 byte int
++  int           val; /* this is supposed to be a 3 byte int */
+ };
+ 
+ 
+-int _dbx_getIndexes (FILE* fp, DBX *dbx) {
++int _dbx_getIndexes (FILE* fp, DBX *dbx) 
++{
+ 	int indexptr;
+ 	int itemcount;
+ 
+-	//first table of indexes
+-	if (_dbx_getAtPos(fp, INDEX_POINTER, &indexptr, sizeof(indexptr))) {
+-		DEBUG_WARN("[%d] Failed to read Index Pointer\n", __LINE__);
+-		dbx_errno = DBX_INDEX_READ;
+-		return 2;
+-	}
+-	
+-	//count of items
++    /* first table of indexes */
++    if (_dbx_getAtPos(fp, INDEX_POINTER, &indexptr, sizeof(indexptr))) {
++        dbx_errno = DBX_INDEX_READ;
++        return 2;
++    }
++    LE32_CPU(indexptr);	
++	/* count of items */
+ 	if (_dbx_getAtPos(fp, ITEM_COUNT, &itemcount, sizeof(itemcount))) {
+-		DEBUG_WARN("[%d] Failed to read itemcount\n", __LINE__);
+ 		dbx_errno = DBX_ITEMCOUNT;
+ 		return 1;
+ 	}
+-	
+-	DEBUG_INDEX("[%d] ItemCount = %d\n",__LINE__, itemcount);
+-	
+-	dbx->indexes = (int*) malloc(itemcount*sizeof(int));
++	LE32_CPU(itemcount);
++	dbx->indexes = (int*) malloc(itemcount * sizeof(int));
+ 	dbx->indexCount = itemcount;
+ 	
+ 	if (_dbx_getindex(fp, indexptr, dbx)) {
+@@ -381,51 +428,48 @@
+ 	}
+ 	
+ 	if (dbx->indexCount != 0) {	
+-		DEBUG_WARN("[%d] The indexcount specified that more indexes exist than have been read\n", __LINE__);
+ 		dbx_errno = DBX_INDEX_UNDERREAD;
+ 		return 3;
+ 	}
+-
+-	dbx->indexCount = itemcount; //reassign itemcount after call cause it should equal zero now
++    /* reassign itemcount after call cause it should equal zero now */
++	dbx->indexCount = itemcount; 
+ 	return 0;
+ }
+ 
+-int _dbx_getindex(FILE* fp, int pos, DBX *dbx) {
++int _dbx_getindex(FILE* fp, int pos, DBX *dbx) 
++{
+ 	int x;
+ 	struct _dbx_tableindexstruct tindex;
+ 	struct _dbx_indexstruct index;
+ 
+-	DEBUG_INDEX("[%d] Reading index from %X\n", __LINE__, pos);
+-	
+-	RET_DERROR(_dbx_getAtPos(fp, pos, &tindex, sizeof(tindex)), DBX_INDEX_READ,
+-				"[%d] Failed to read table index structure\n", __LINE__);
+-	
+-	DEBUG_INDEX("tindex.indexCount = %d\ntindex.anotherTablePtr = %d\n", tindex.indexCount, tindex.anotherTablePtr);
++	RET_ERROR(_dbx_getAtPos(fp, pos, &tindex, sizeof(tindex)), DBX_INDEX_READ);
+ 	
++    LE32_CPU(tindex.self);
++    LE32_CPU(tindex.unknown1);
++    LE32_CPU(tindex.anotherTablePtr);
++    LE32_CPU(tindex.parent);
++    LE32_CPU(tindex.indexCount);
++    
+ 	if (tindex.indexCount > 0) {
+-		DEBUG_INDEX("[%d] Recursing to get more indexes\n", __LINE__);
+ 		_dbx_getindex (fp, tindex.anotherTablePtr, dbx);
+ 	}
+ 
+ 	pos += sizeof(struct _dbx_tableindexstruct);
+ 	
+-	DEBUG_INDEX("[%d] ptrCount = %d\n", __LINE__, tindex.ptrCount);
+-	
+-	for (x = 1; x <= tindex.ptrCount; x++) {
+-		RET_DERROR(_dbx_getAtPos(fp, pos, &index, sizeof(struct _dbx_indexstruct)), DBX_INDEX_READ,
+-					"[%d] Failed to read index structure at pos %d\n", __LINE__, pos);
++    for (x = 1; x <= tindex.ptrCount; x++) {
++        RET_ERROR(_dbx_getAtPos(fp, pos, &index, 
++                  sizeof(struct _dbx_indexstruct)), DBX_INDEX_READ);
++        LE32_CPU(index.indexptr);
++        LE32_CPU(index.anotherTablePtr);
++        LE32_CPU(index.indexCount);
+ 
+-		RET_DERROR(dbx->indexCount < 0, DBX_INDEX_OVERREAD,
+-						"[%d] Read too many indexes\n", __LINE__);
++        RET_ERROR(dbx->indexCount < 0, DBX_INDEX_OVERREAD);
+ 		
+-		dbx->indexes[--dbx->indexCount] = index.indexptr;
+-		DEBUG_INDEX("[%d] Adding index pointer of %X at pos %d\n", __LINE__, index.indexptr, dbx->indexCount);		
+-
+-		pos += sizeof(struct _dbx_indexstruct);
+-		if (index.indexCount > 0)
+-			_dbx_getindex(fp, index.anotherTablePtr, dbx);
+-	}
+-	
++        dbx->indexes[--dbx->indexCount] = index.indexptr;
++        pos += sizeof(struct _dbx_indexstruct);
++        if (index.indexCount > 0)
++            _dbx_getindex(fp, index.anotherTablePtr, dbx);
++    }
+ 	return 0;
+ }
+ 
+@@ -436,7 +480,8 @@
+ 
+ int _dbx_getitem (FILE *fp, int pos, void **item, int type, int flags) {
+ 	int x;
+-	char *bufptr, *buffer, **bufx;
++	char *bufptr, *buffer; 
++	void **bufx;
+ 	int readtype=STRING_TYPE;
+ 	
+ 	DBXEMAIL *email = NULL;
+@@ -460,99 +505,124 @@
+ 	  *item = folder;
+ 	}
+ 
+-	DEBUG_EMAIL("[%d] Reading from pos %#X\n", __LINE__, pos);
+-	RET_DERROR(_dbx_getAtPos(fp, pos, &blockhdr, sizeof(blockhdr)), DBX_INDEX_READ,
+-		   "[%d] Failed to read header of email block at pos %d\n", __LINE__, pos);
++	RET_ERROR(_dbx_getAtPos(fp, pos, &blockhdr, sizeof(blockhdr)), 
++              DBX_INDEX_READ);
++   
++    LE32_CPU(blockhdr.self);
++    LE32_CPU(blockhdr.size);
++    LE32_CPU(blockhdr.u1);
++    
++	/* we will load all the block into memory 
++     * as we will be accessing it byte by byte */
+ 
+-	//we will load all the block into memory as we will be accessing it byte by byte
+-	DEBUG_EMAIL("[%d] Creating block buffer of %d\n", __LINE__, blockhdr.size);
+ 	buffer = (char*) malloc(blockhdr.size);
+-	RET_DERROR(_dbx_get(fp, buffer, blockhdr.size), DBX_DATA_READ,
+-		   "[%d] Failed to read datablock of size %d from pos %d\n", __LINE__, blockhdr.size, pos+sizeof(struct _dbx_email_headerstruct));
+-
++	RET_ERROR(_dbx_get(fp, buffer, blockhdr.size), DBX_DATA_READ);
+ 	bufptr = buffer;
+-	if (email != NULL)
++	if (email)
+ 		email->data_offset = -1;
+ 
+ 	for (x = 0; x < blockhdr.count; x++) {
+ 	  blockp.val = 0;
+ 
+-	  memcpy(&(blockp.type), bufptr, 1); //this will copy the type 
+-	  memcpy(&(blockp.val), bufptr+1, 3); //and the 3 byte int
+-
+-	  DEBUG_EMAIL("[%d] type = %#X value = %#X\n", __LINE__, blockp.type, blockp.val);
++	  memcpy(&(blockp.type), bufptr, 1);    /* this will copy the type */
++	  memcpy(&(blockp.val), bufptr+1, 3);   /* and the 3 byte int */
++      
++      /* we pretend it's a four byte integer */
++      LE32_CPU(blockp.val); 
++      
+ 	  if (type == DBX_TYPE_EMAIL) {
+ 	    switch (blockp.type) {
+-	    case 0x01: //pointer to flag
++	    case 0x01: 
++            /* pointer to flag */
+ 	    	email->flag = 0;
+-	    	((int*)bufx) = &(email->flag);
++	    	bufx = (void**)&(email->flag);
+ 	    	readtype = CHAR_TYPE;
+ 	    	break;
+-	    case 0x04: //pointer to dataptr
+-	      ((int*)bufx) = &(email->data_offset);
+-	      readtype = INT_TYPE;
+-	      break;
+-	    case 0x05: //asciiz string of subject (without RE: or FWD: etc...)
+-	      bufx = &(email->psubject);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x07: //message id of email
+-	      bufx = &(email->messageid);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x08: //second copy of subject.Original text (with RE: and FWD: etc...)
+-	      bufx = &(email->subject);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x0A: //msg-id of parent(s)
+-	      bufx = &(email->parent_message_ids);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x0C: //name of server used to fetch email
+-	    	bufx = &(email->fetched_server);
++	    case 0x04: 
++            /*pointer to dataptr */
++	        bufx = (void**)&(email->data_offset);
++	        readtype = INT_TYPE;
++	        break;
++	    case 0x05: 
++            /* asciiz string of subject (without RE: or FWD: etc...) */
++	        bufx = (void**)&(email->psubject);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x07: 
++            /* message id of email */
++	        bufx = (void**)&(email->messageid);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x08: 
++            /* second copy of subject. Original text (with RE: etc...) */
++            bufx = (void**)&(email->subject);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x0A: 
++            /* msg-id of parent(s) */
++	        bufx = (void**)&(email->parent_message_ids);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x0C: 
++            /* name of server used to fetch email */
++	    	bufx = (void**)&(email->fetched_server);
+ 	    	readtype = STRING_TYPE;
+ 	    	break;
+-	    case 0x0D: //Sender's name
+-	      bufx = &(email->sender_name);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x0E: //Sender's email address
+-	      bufx = &(email->sender_address);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x12: //date - of what i'm not sure. It is in a win32 FILETIME structure. needs converting to something
+-				((struct FILETIME*)bufx) = &(email->date);
+-				readtype = W32FT_TYPE;
+-				break;
+-	    case 0x13: //recipient's name
+-	      bufx = &(email->recip_name);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x14: //recipient's email address
+-	      bufx = &(email->recip_address);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x1A: //Name of Account used to fetch email
+-	    	bufx = &(email->oe_account_name);
++	    case 0x0D: 
++            /* Sender's name */
++	        bufx = (void**)&(email->sender_name);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x0E: 
++            /* Sender's email address */
++	        bufx = (void**)&(email->sender_address);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x12: 
++            /* date - of what i'm not sure. 
++             * It is in a win32 FILETIME structure. 
++             * needs converting to something */
++			bufx = (void**)&(email->date);
++			readtype = W32FT_TYPE;
++			break;
++	    case 0x13: 
++            /* recipient's name */
++	        bufx = (void**)&(email->recip_name);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x14: 
++            /* recipient's email address */
++	        bufx = (void**)&(email->recip_address);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x1A: 
++            /* Name of Account used to fetch email */
++	    	bufx = (void**)&(email->oe_account_name);
+ 	    	readtype = STRING_TYPE;
+ 	    	break;
+-	    case 0x1B: //String version of account number used to fetch email (eg "00000001")
+-	    	bufx = &(email->oe_account_num);
++	    case 0x1B: 
++            /* String version of account number 
++             * used to fetch email (eg "00000001") */
++	    	bufx = (void**)&(email->oe_account_num);
+ 	    	readtype = STRING_TYPE;
+ 	    	break;
+-	    case 0x80: //email's ID
+-	      bufx = NULL;
+-	      email->id = blockp.val;
+-	      break;
+-	    case 0x81: //email's flag
++	    case 0x80: 
++            /* email's ID */
++	        bufx = NULL;
++	        email->id = blockp.val;
++	        break;
++	    case 0x81: 
++            /* email's flag */
+ 	    	bufx=NULL;
+ 	    	email->flag = blockp.val;
+ 	    	break;
+-	    case 0x84: //direct offset of first email data block
+-	      email->data_offset = blockp.val;
+-	      bufx = NULL;
+-	      break;
+-	      /*	    case 0x02: //currently unknown
++	    case 0x84: 
++            /* direct offset of first email data block */
++	        email->data_offset = blockp.val;
++	        bufx = NULL;
++	        break;
++	    /*	    
++        case 0x02: //currently unknown
+ 	    case 0x06: //currently unknown
+ 	    case 0x09:
+ 	    case 0x0B:
+@@ -564,121 +634,128 @@
+ 	    case 0x81: //currently unknown
+ 	    case 0x90: //currently unknown
+ 	    case 0x91: //currently unknown
+-	      bufx = NULL;
+-	      break;*/
++	        bufx = NULL;
++	        break; */
+ 	    default:
+-	      DEBUG_WARN("[%d] Come across unknown type %#X with val of %#X in blockp\n", __LINE__, blockp.type, blockp.val);
+ 	      bufx = NULL;
+ 	    }
+ 	  } else {
+ 	    switch(blockp.type) {
+-	    case 0x02: //descriptive name
+-	      bufx = &(folder->name);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x03: //filename
+-	      bufx = &(folder->fname);
+-	      readtype = STRING_TYPE;
+-	      break;
+-	    case 0x80: //current id
+-	      bufx = NULL;
+-	      folder->id = blockp.val;
+-	      break;
+-	    case 0x81: //parent id
+-	      bufx = NULL;
+-	      folder->parentid = blockp.val;
+-	      break;
+-	      /*	    case 0x86: //unknown
++	    case 0x02: 
++            /* descriptive name */
++	        bufx = (void**)&(folder->name);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x03: 
++            /* filename */
++	        bufx = (void**)&(folder->fname);
++	        readtype = STRING_TYPE;
++	        break;
++	    case 0x80: 
++            /* current id */
++	        bufx = NULL;
++	        folder->id = blockp.val;
++	        break;
++	    case 0x81: 
++            /* parent id */
++	        bufx = NULL;
++	        folder->parentid = blockp.val;
++	        break;
++	    /*	    
++        case 0x86: //unknown
+ 	    case 0x87: //unknown
+ 	    case 0x88: //unknown
+ 	    case 0x8A: //unknown
+ 	    case 0x8B: //unknown
+-	      bufx = NULL;
+-	      break;*/
++	        bufx = NULL;
++	        break;*/
+ 	    default:
+-	      DEBUG_WARN("[%d] Come across unknown type %#X with val of %#X in blockp\n", __LINE__, blockp.type, blockp.val);
+ 	      bufx = NULL;
+ 	    }
+ 	  }
+ 
+-	  if (bufx != NULL)
+-	    if (_dbx_get_from_buf(buffer, blockp.val + (blockhdr.count*4), (void**)bufx, readtype, blockhdr.size))
+-	      return 1; //an error occured
+-
+-	  bufptr += 4; //size of data
++	  if (bufx)
++	        if (_dbx_get_from_buf(buffer, blockp.val + (blockhdr.count*4), 
++                                      bufx, readtype, blockhdr.size))
++	            return 1; /* an error occured */
++	  bufptr += 4; /* size of data */
+ 	}
+ 	free (buffer);
++    
+ 	/* if we are doing folder types, we have now finished */
+ 	if (type == DBX_TYPE_FOLDER || body == 0)
+-	  return 0;
++	    return 0;
+ 
+-	RET_DERROR(email->data_offset == -1, DBX_DATA_READ,
+-		   "[%s:%d] Dataptr hasn't been set for current email\n", __FILE__, __LINE__);
++    RET_ERROR(email->data_offset == -1, DBX_DATA_READ);
+ 
+ 	return _dbx_getBody(fp, &(email->email), email->data_offset);
+ }
+ 
+-int _dbx_getBody(FILE *fp, char** x, int ptr) {
+-	int bufsize = 0;
+-	struct _dbx_block_hdrstruct hdr;
+-	*x = NULL;
+-	while (ptr != 0) {
+-	  RET_DERROR(_dbx_getAtPos(fp, ptr, &hdr, sizeof(hdr)), DBX_DATA_READ,
+-		     "[%d] Failed to read datalength\n", __LINE__);
+-//		printf("Read header\n");
+-	  //this plus one will not be accumulative
+-	  //cause we don't add it to bufsize but we need it so we can terminate the buffer
+-	  *x = realloc(*x, bufsize + hdr.blocksize + 1);
+-	  RET_DERROR(_dbx_get(fp, (*x)+bufsize, hdr.blocksize), DBX_DATA_READ,
+-		     "[%d] Failed to read data\n", __LINE__);
+-
+-	  bufsize += hdr.blocksize;
+-	  ptr = hdr.nextaddress;
++int _dbx_getBody(FILE *fp, char** x, int ptr) 
++{
++    int bufsize = 0;
++    struct _dbx_block_hdrstruct hdr;
++    *x = NULL;
++    
++    while (ptr != 0) {
++	    RET_ERROR(_dbx_getAtPos(fp, ptr, &hdr, sizeof(hdr)), DBX_DATA_READ);
++        LE32_CPU(hdr.self);
++        LE32_CPU(hdr.nextaddressoffset);
++        LE16_CPU(hdr.blocksize);
++        LE32_CPU(hdr.nextaddress);
++        /* this plus one will not be accumulative cause we don't add it to
++         * bufsize but we need it so we can terminate the buffer */
++	    *x = realloc(*x, bufsize + hdr.blocksize + 1);
++	    RET_ERROR(_dbx_get(fp, (*x)+bufsize, hdr.blocksize), DBX_DATA_READ);
++	    bufsize += hdr.blocksize;
++	    ptr = hdr.nextaddress;
+ 	}
+-	if (*x != NULL)
+-		(*x)[bufsize] = '\0'; //terminate the buffer
++    
++	if (*x) 
++        (*x)[bufsize] = '\0'; /* terminate the buffer */
+ 
+-	return bufsize; //size of data read
++    /* size of data read */
++	return bufsize; 
+ }
+ 
+-int _dbx_getstruct(FILE *fp, int pos, DBXFOLDER* folder) {
+-	struct _dbx_folder_hdrstruct hdr;
+-	struct _dbx_folderstruct fol;
+-	
+-	char *buf, *fname;
+-	int msgoffset, blockpos=0;
+-	
+-	folder->name = NULL;
+-	DEBUG("[%d] Reading from pos %X\n", __LINE__, pos);
+-	
+-	RET_DERROR(_dbx_getAtPos(fp, pos, &hdr, sizeof(hdr)), DBX_DATA_READ,
+-					"[%d] Failed to read Folder Header at pos %d\n", __LINE__,pos);
+-	
+-	RET_DERROR(_dbx_get(fp, &fol, sizeof(fol)), DBX_DATA_READ,
+-					"[%d] Failed to read Folder Header at pos %d\n", __LINE__, pos);
++int _dbx_getstruct(FILE *fp, int pos, DBXFOLDER* folder) 
++{
++    struct _dbx_folder_hdrstruct hdr;
++    struct _dbx_folderstruct fol;
++    
++    char *buf, *fname;
++    int msgoffset, blockpos=0;
++    
++    folder->name = NULL;
++    
++	RET_ERROR(_dbx_getAtPos(fp, pos, &hdr, sizeof(hdr)), DBX_DATA_READ);
+ 
+-	blockpos += sizeof(hdr);
+-	buf = (char*) malloc(fol.length1);
+-	msgoffset = hdr.intcount * sizeof(int);
+-	DEBUG("[%d] Msgoffset = %d\n", __LINE__, msgoffset);
++    LE32_CPU(hdr.self);
++    LE32_CPU(hdr.blocksize);
++    LE16_CPU(hdr.unknown2);
++
++	RET_ERROR(_dbx_get(fp, &fol, sizeof(fol)), DBX_DATA_READ);
++
++    LE32_CPU(fol.id);
++    LE32_CPU(fol.parent);
++    LE32_CPU(fol.unknown6)
++    blockpos += sizeof(hdr);
++    buf = (char*) malloc(fol.length1);
++    msgoffset = hdr.intcount * sizeof(int);
+ 	
+-	RET_DERROR(_dbx_getAtPos(fp, pos+blockpos+msgoffset, buf, fol.length1), DBX_DATA_READ,
+-					"[%d] Failed to read Folder name at pos %d\n", __LINE__, pos+msgoffset);
+-	if (strlen(buf) != fol.length1-1){
+-		WARN("libdbx: [%d] Length of read foldername not equal to expectation\n", __LINE__);
+-	}
+-	
+-	/*Allocate space big enough to hold remainder of block*/
+-	fname = (char*) malloc(hdr.blocksize-blockpos);
+-	if (fname == NULL) {
+-		WARN("libdbx: [%d] We must have read past the end of the blocksize\n", __LINE__);
+-		return -1;
++    RET_ERROR(_dbx_getAtPos(fp, pos+blockpos+msgoffset, buf, fol.length1), 
++               DBX_DATA_READ);
++    
++    if (strlen(buf) != fol.length1 - 1) { }
++
++    /* Allocate space big enough to hold remainder of block */
++    fname = (char*) malloc(hdr.blocksize - blockpos);
++    if (!fname) {
++        return -1;
+ 	}
+ 	
+-	RET_DERROR(_dbx_get(fp, fname, hdr.blocksize-blockpos), DBX_DATA_READ,
+-					"[%d] Failed to read filename of folder\n", __LINE__);
++	RET_ERROR(_dbx_get(fp, fname, hdr.blocksize-blockpos), DBX_DATA_READ);
+ 	
+-	DEBUG("[%d] name = %s\t fname = %s\n", __LINE__, buf, fname);
+ 	folder->name = buf;
+ 	folder->fname = fname;
+ 	folder->id = fol.id;
+@@ -705,29 +782,22 @@
+ 	return 0;
+ }
+ 
+-int _dbx_get_from_buf(char* buffer, int pos, void** dest, int type, int max) {
+-  int y;
+-  //copy data from buffer to string pointed to by bufx
+-  if (type == STRING_TYPE) {
+-    y = strlen(&buffer[pos])+1; //plus one for string terminator
+-    DEBUG_EMAIL("[%d] copying values [%d bytes] from buffer starting from %d\n", __LINE__, y, pos);
+-
+-    RET_DERROR(y > max, DBX_DATA_READ,
+-	       "[%d] Length of string being read[%d] from data buffer is greater than buffer size[%d]", __LINE__, y, max);
+-    
+-    if (*dest == NULL)
+-    	*dest = (char*) malloc(y);
+-    strncpy(*dest, &buffer[pos], y);
+-    DEBUG_EMAIL("[%d] value copied was %s\n", __LINE__, (char*)*dest);
+-  } else if (type == INT_TYPE) {
+-    memcpy((int*)dest, &buffer[pos], 4);
+-    DEBUG_EMAIL("[%d] value copied was %#X\n", __LINE__, (int)*dest);
+-  } else if (type == W32FT_TYPE) {
+-		memcpy((struct WIN32_FILETIME*)dest, &buffer[pos], 8);
+-//		DEBUG_EMAIL("[%d] value copied was %#X%X\n", __LINE__, (struct FILETIME*)dest->dwHighDateTime, (struct FILETIME*)dest->dwLowDateTime);
+-	} else if (type == CHAR_TYPE) {
+-		memcpy((unsigned char*)dest, &buffer[pos], 1);
+-		DEBUG_EMAIL("[%d] value copied was %i\n", __LINE__, (unsigned char)*((unsigned char*)dest));
++int _dbx_get_from_buf(char* buffer, int pos, void** dest, int type, int max) 
++{
++    int y;
++    /* copy data from buffer to string pointed to by bufx */
++    if (type == STRING_TYPE) {
++        y = strlen(&buffer[pos]) + 1; /* plus one for string terminator */
++        RET_ERROR(y > max, DBX_DATA_READ);
++        if (!*dest)
++            *dest = (char*) malloc(y);
++        strncpy(*dest, &buffer[pos], y);
++    } else if (type == INT_TYPE) {  
++        memcpy((int*)dest, &buffer[pos], 4);
++    } else if (type == W32FT_TYPE) {
++        memcpy((struct FILETIME*)dest, &buffer[pos], 8);
++    } else if (type == CHAR_TYPE) {
++        memcpy((unsigned char*)dest, &buffer[pos], 1);
+ 	}
+ 	
+   return 0;
+diff -Naur libdbx_1.0.3/libdbx.h libdbx_1.0.3.oden/libdbx.h
+--- libdbx_1.0.3/libdbx.h	2002-10-05 15:20:25.000000000 +0200
++++ libdbx_1.0.3.oden/libdbx.h	2005-06-23 20:51:48.000000000 +0200
+@@ -17,7 +17,6 @@
+ 
+ /*
+ 	libdbx - read dbx files as used by Outlook Express 5.0
+-
+ */
+ 
+ #ifndef _LIBDBX_H_
+@@ -27,65 +26,70 @@
+ 
+ #define LIBDBX_VERSION "1.0.3"
+ 
++#ifdef _WIN32
++# include <Windows.h>
++# define FILETIME_DEFINED
++#endif
++
+ #ifndef FILETIME_DEFINED
+ #define FILETIME_DEFINED
+-/*Win32 Filetime struct - copied from WINE*/
++/* Win32 Filetime struct - copied from WINE */
+ typedef struct {
+ 	unsigned int dwLowDateTime;
+-  unsigned int dwHighDateTime;
++    unsigned int dwHighDateTime;
+ } FILETIME;
+ #endif
+ 
+ /* Control Structure */
+ struct dbxcontrolstruct {
+-	FILE *fd; //file descriptor of the dbx file
+-	int indexCount; //number of elements in the following array
+-	int * indexes; //array of indexes
+-	int type; //type of DBX file
++	FILE *fd;       /* file descriptor of the dbx file */
++	int indexCount; /* number of elements in the following array */
++	int * indexes;  /* array of indexes */
++	int type;       /* type of DBX file */
+ };
+ 
+ typedef struct dbxcontrolstruct DBX;
+ 
+ /* Folder Entity - Extracted from folders.dbx */
+ struct dbxfolderstruct {
+-  int  num; //index number of folder
+-  char type; //is folder or email
+-	char *name; //name of folder
+-	char *fname; //filename of the folder
+-	int id; //numeric id of the folder
+-	int parentid; //numeric id of the parent folder
++    int  num;       /* index number of folder */
++    char type;      /* is folder or email */
++	char *name;     /* name of folder */
++	char *fname;    /* filename of the folder */
++	int id;         /* numeric id of the folder */
++	int parentid;   /* numeric id of the parent folder */
+ };
+ 
+ typedef struct dbxfolderstruct DBXFOLDER;
+ 
+ /* Email Entity - Extracted from a mail type .dbx file */
+ struct dbxemailstruct {
+-	int num; //index number of item
+-  char type; //is folder or email
+-  char *email; //email contents
+-  char *psubject; //Processed subject line (without RE: etc...)
+-  char *subject; //original subject line
+-  char *messageid; //message's mail id
+-  char *parent_message_ids; //ids of parents
+-  char *sender_name;
+-  char *sender_address;
+-  char *recip_name;
+-  char *recip_address;
+-  FILETIME date; //of what I am unsure
+-  int  id; //dbx id
+-  int  data_offset; //offset of the body portion in the dbx file
+-  int  flag; //flags of email
+-  char *oe_account_name; //name of the account that accepted this email
+-  char *oe_account_num; //string representation of the account number (e.g. "00000001")
+-  char *fetched_server; //name of POP server message came from
++	int num;                    /* index number of item */
++    char type;                  /* is folder or email */
++    char *email;                /* email contents */
++    char *psubject;             /* Processed subject line (without RE: etc..) */
++    char *subject;              /* original subject line */
++    char *messageid;            /* message's mail id */
++    char *parent_message_ids;   /* ids of parents */
++    char *sender_name;
++    char *sender_address;
++    char *recip_name;
++    char *recip_address;
++    FILETIME date;            /* of what I am unsure */
++    int  id;                  /* dbx id */
++    int  data_offset;         /* offset of the body portion in the dbx file */
++    int  flag;                /* flags of email */
++    char *oe_account_name;    /* name of the account that accepted this email */
++    char *oe_account_num;     /* string representation of the account number */
++    char *fetched_server;     /* name of POP server message came from */
+ };
+ 
+ typedef struct dbxemailstruct DBXEMAIL;
+ 
+ /* Non-Entity - just the header type */
+ struct dbxnonstruct {
+-	int num; //not really important
+-	char type; //used to determine the type of this object
++	int num;    /* not really important */
++	char type;  /* used to determine the type of this object */
+ };
+ 
+ typedef struct dbxnonstruct DBXNON;
+@@ -114,6 +118,11 @@
+ #define DBX_NEWS_ITEM 8
+ 
+ /* Prototypes */
++
++#ifdef __SUNPRO_C
++#   define const
++#endif
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+@@ -134,23 +143,23 @@
+ }
+ #endif
+ 
+-/*Types of DBX file*/
+-/*0 - Contains emails*/
++/* Types of DBX file */
++/* 0 - Contains emails */
+ #define DBX_TYPE_EMAIL 0
+-/*1 - Contains news group items*/
++/* 1 - Contains news group items */
+ #define DBX_TYPE_NEWS 1
+-/*2 - Contains the folder structure of Outlook*/
++/* 2 - Contains the folder structure of Outlook */
+ #define DBX_TYPE_FOLDER 2
+-/*3 - Contains a none entity structure*/
++/* 3 - Contains a none entity structure */
+ #define DBX_TYPE_VOID 3
+ 
+-/*Fetch flags for dbx_get*/
+-/*1<<0 - Fetch the body*/
++/* Fetch flags for dbx_get */
++/* 1<<0 - Fetch the body */
+ #define DBX_FLAG_BODY 1<<0
+ 
+ 
+-/*Flag defines for email->flag*/
++/* Flag defines for email->flag */
+ /* 0x80 - Is Seen (10000000) */
+ #define DBX_EMAIL_FLAG_ISSEEN 0x80
+ 
+-#endif //_LIBDBX_H_
++#endif /* LIBDBX_H */

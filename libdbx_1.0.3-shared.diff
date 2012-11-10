@@ -1,0 +1,71 @@
+--- Makefile	2002-10-05 15:20:25.000000000 +0200
++++ Makefile.oden	2006-04-10 12:15:11.000000000 +0200
+@@ -1,19 +1,56 @@
++CC=gcc
++CFLAGS+=-Wall -DDBX_BIG_ENDIAN
++#CFLAGS+=-Wall -DDBX_LITTLE_ENDIAN
++bindir = /usr/bin
++libdir = /usr/lib
++includedir = /usr/include
++DESTDIR = 
++
++AR = ar
++RANLIB = ranlib
++LIBTOOL = libtool
++INSTALL = install -c
++LDFLAGS = 
++
++LT_CURRENT=0
++LT_REVISION=0
++LT_AGE=0
++
+ OBJECT_FILES=libdbx.o timeconv.o
++LTOBJS:= $(OBJECT_FILES:.o=.lo)
+ HEADER_FILES=libdbx.h define.h common.h
+ 
+-all: readdbx readoe
+-
+-readdbx: $(OBJECT_FILES) $(HEADER_FILES) readdbx.c
+-	gcc -I/usr/local/include -g -o readdbx readdbx.c $(OBJECT_FILES) 
++all: libdbx.la readdbx readoe
+ 
+-readoe: $(OBJECT_FILES) $(HEADER_FILES) readoe.c
+-	gcc -I/usr/local/include -g -o readoe readoe.c $(OBJECT_FILES)
++libdbx.la: $(LTOBJS)
++	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -rpath $(libdir) \
++	-version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) -o \
++	libdbx.la $(LTOBJS)
++
++readdbx: readdbx.o libdbx.la
++	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o $@ $(LDFLAGS) $^
++
++readoe: readoe.o libdbx.la
++	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o $@ $(LDFLAGS) $^
++
++%.o: %.c
++	$(CC) -c $(CFLAGS) $< -o $@
++
++%.lo: %.c
++	$(LIBTOOL) --mode=compile $(CC) -c $(CFLAGS) $< -o $@
++
++install:
++	$(INSTALL) -d $(DESTDIR)$(bindir)
++	$(INSTALL) -d $(DESTDIR)$(libdir)
++	$(INSTALL) -d $(DESTDIR)$(includedir)/libdbx
++	$(LIBTOOL) --mode=install $(INSTALL) libdbx.la $(DESTDIR)$(libdir)
++	$(LIBTOOL) --mode=install $(INSTALL) -m 755 readdbx $(DESTDIR)$(bindir)
++	$(LIBTOOL) --mode=install $(INSTALL) -m 755 readoe $(DESTDIR)$(bindir)
++	$(INSTALL) -m 644 common.h $(DESTDIR)$(includedir)/libdbx
++	$(INSTALL) -m 644 define.h $(DESTDIR)$(includedir)/libdbx
++	$(INSTALL) -m 644 libdbx.h $(DESTDIR)$(includedir)/libdbx
+ 
+ clean:
+-	rm -f $(OBJECT_FILES) readoe readdbx core *~
+-
+-dist: clean
+-	cd ..; tar -zcvf libdbx.tgz libdbx/*
++	rm -f *.o *.lo *.a *.la readoe readdbx core *~
++	rm -rf .libs
+ 
+-%.o: %.c $(HEADER_FILES)
+-	gcc -g -c $*.c $(DEBUG_FLAGS)
