@@ -8,7 +8,7 @@ Version: 	1.0.3
 Release: 	10
 License:	GPLv2+
 Group:		Networking/Mail
-URL:		http://sourceforge.net/projects/ol2mbox
+URL:		https://sourceforge.net/projects/ol2mbox
 Source0:	libdbx_%{version}.tar.bz2
 Patch0:		libdbx_1.0.3-shared.diff
 Patch1:		libdbx_1.0.3-Mail-Transport-Dbx-0.07.diff
